@@ -130,6 +130,29 @@ def run_phase1(config: dict, device: torch.device, args, rm: ResultsManager) -> 
     return model
 
 
+def _get_profiling_loader(config: dict, device: torch.device) -> torch.utils.data.DataLoader:
+    """Get training loader, subsetted to a fixed size if specified in config."""
+    train_loader, _ = get_dataloaders(config)
+    num_samples = config.get("profiling", {}).get("num_samples", None)
+    if num_samples is not None and num_samples < len(train_loader.dataset):
+        from torch.utils.data import Subset, DataLoader
+        # Use a fixed generator seed for consistent sub-sampling across phases
+        g = torch.Generator()
+        g.manual_seed(42)
+        indices = torch.randperm(len(train_loader.dataset), generator=g)[:num_samples].tolist()
+        subset_dataset = Subset(train_loader.dataset, indices)
+        # Re-create loader with shuffle=False to ensure stable sample indexing in Phase 3
+        train_loader = DataLoader(
+            subset_dataset,
+            batch_size=config["model"].get("batch_size", 128),
+            shuffle=False,
+            num_workers=2,
+            pin_memory=(device.type == "cuda"),
+        )
+        print(f"Sub-sampled training loader to {num_samples} samples for profiling/training.")
+    return train_loader
+
+
 def run_phase2(config: dict, device: torch.device, args, rm: ResultsManager) -> dict:
     """Run Phase 2: SNN Profiling."""
     print("\n" + "=" * 60)
@@ -149,8 +172,8 @@ def run_phase2(config: dict, device: torch.device, args, rm: ResultsManager) -> 
     ann_model.load_state_dict(ckpt["model_state_dict"])
     print(f"Loaded ANN from {ann_ckpt_path} (acc={ckpt.get('best_acc', '?')}%)")
 
-    # Get training data
-    train_loader, _ = get_dataloaders(config)
+    # Get training data (subsetted if configured)
+    train_loader = _get_profiling_loader(config, device)
 
     # Run profiling
     results = profile_snn(
@@ -212,7 +235,7 @@ def run_phase3(config: dict, device: torch.device, args, rm: ResultsManager) -> 
         percentile=config["conversion"].get("percentile", 99.9),
         calibrate=False,
     )
-    train_loader, _ = get_dataloaders(config)
+    train_loader = _get_profiling_loader(config, device)
 
     from neuroscale.training.phase2_profiling import _make_calibration_loader
     calib_loader = _make_calibration_loader(train_loader, config)

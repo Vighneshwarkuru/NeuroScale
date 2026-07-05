@@ -1,0 +1,43 @@
+dataset:
+  name: cifar10
+  num_classes: 10
+  image_size: 32
+  data_dir: ./data
+
+model:
+  ann: resnet20
+  batch_size: 128
+  epochs: 5            # Fast training for demo
+  lr: 0.1
+  weight_decay: 1.0e-4
+  momentum: 0.9
+  lr_schedule: cosine
+
+conversion:
+  method: threshold_balancing
+  calibration_samples: 256  # Fewer samples for fast balancing
+  percentile: 99.9
+
+snn:
+  timesteps: [1, 2, 4, 8, 16]   # Reduced timesteps
+  max_timestep: 16
+  exit_points: [4, 8, 16]
+
+profiling:
+  num_samples: 1000   # Profile 1000 samples instead of 50000
+  batch_size: 128
+
+predictor:
+  hidden_dims: [64, 128, 64]
+  lr: 1.0e-3
+  epochs: 5            # Fast joint training for demo
+  batch_size: 128
+
+scaling_law:
+  target_accuracy: 0.85
+  min_timestep: 1
+  max_timestep: 16
+
+inference:
+  confidence_threshold: 0.8
+  energy_weight: 0.5
